@@ -27,7 +27,7 @@ import io.opentelemetry.semconv.resource.attributes.ResourceAttributes;
  */
 
 /** Example showing how to configure OpenTelemetry for tracing with Scylla Java Driver. */
-class OpenTelemetryConfiguration {
+public class OpenTelemetryConfiguration {
     private static final String SERVICE_NAME = "Scylla Java driver";
 
     public static OpenTelemetry initialize(SpanExporter spanExporter) {
