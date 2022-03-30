@@ -11,9 +11,12 @@ import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Session;
 import com.datastax.driver.opentelemetry.OpenTelemetryTracingInfoFactory;
 import io.opentelemetry.api.OpenTelemetry;
+import org.springframework.boot.web.client.RestTemplateBuilder;
+import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestTemplate;
 
 @RestController
 public class GreetingController {
@@ -26,6 +29,21 @@ public class GreetingController {
     private final OpenTelemetryTracingInfoFactory tracingInfoFactory;
 
     private final Session session;
+
+    @Service
+    static class Poker {
+
+        private final RestTemplate restTemplate;
+
+        public Poker() {
+            this.restTemplate = new RestTemplate();
+        }
+
+        public String getPostsPlainJSON() {
+            String url = "localhost:8081/fetch";
+            return this.restTemplate.getForObject(url, String.class);
+        }
+    }
 
     public GreetingController() {
         cluster = Cluster.builder()
@@ -42,6 +60,11 @@ public class GreetingController {
         session = cluster.connect();
     }
 
+    @GetMapping("/poke")
+    public void poke(@RequestParam(value = "where", defaultValue = "") String name) {
+        Poker s = new Poker();
+        s.getPostsPlainJSON();
+    }
 
     @GetMapping("/fetch")
     public List<String> fetch(@RequestParam(value = "where", defaultValue = "") String name) {
