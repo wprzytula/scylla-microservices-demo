@@ -40,7 +40,7 @@ public class GreetingController {
         }
 
         public String getPostsPlainJSON() {
-            String url = "localhost:8081/fetch";
+            String url = "http://localhost:8081/fetch";
             return this.restTemplate.getForObject(url, String.class);
         }
     }
