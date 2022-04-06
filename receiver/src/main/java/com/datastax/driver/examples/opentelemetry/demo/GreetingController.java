@@ -11,6 +11,9 @@ import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Session;
 import com.datastax.driver.opentelemetry.OpenTelemetryTracingInfoFactory;
 import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Scope;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,7 +26,7 @@ public class GreetingController {
 
     private final Cluster cluster;
 
-    private final OpenTelemetryTracingInfoFactory tracingInfoFactory;
+    private final Tracer tracer;
 
     private final Session session;
 
@@ -36,8 +39,8 @@ public class GreetingController {
 
         OpenTelemetry openTelemetry = OpenTelemetryConfiguration.initializeForZipkin("localhost", 9411);
 
-        tracingInfoFactory = new OpenTelemetryTracingInfoFactory(openTelemetry.getTracer("test"));
-        cluster.setTracingInfoFactory(tracingInfoFactory);
+        tracer = openTelemetry.getTracer("test");
+        cluster.setTracingInfoFactory(new OpenTelemetryTracingInfoFactory(tracer));
 
         session = cluster.connect();
     }
@@ -45,6 +48,22 @@ public class GreetingController {
 
     @GetMapping("/fetch")
     public List<String> fetch(@RequestParam(value = "where", defaultValue = "") String name) {
+        if (Span.current() != null) {
+            return fetchRequest();
+        }
+        else {
+            Span span = tracer.spanBuilder(name).startSpan();
+
+            try (Scope scope = span.makeCurrent()) {
+                return fetchRequest();
+            }
+            finally {
+                span.end();
+            }
+        }
+    }
+
+    List<String> fetchRequest() {
         ResultSet result = session.execute("SELECT * FROM simplex.playlists;");
         List<String> results = new ArrayList<>();
         for (Row row: result) {
