@@ -68,8 +68,8 @@ public class SenderController {
             restTemplate = new RestTemplate();
         }
 
-        public String getPostsPlainJSON() {
-            String url = "http://localhost:8080/fetch";
+        public String getPostsPlainJSON(final String classic_tracing) {
+            final String url = "http://localhost:8080/fetch?classic_tracing=" + classic_tracing;
             return this.restTemplate.getForObject(url, String.class);
         }
     }
@@ -82,8 +82,8 @@ public class SenderController {
             restTemplate = new RestTemplate();
         }
 
-        public String getPostsPlainJSON() {
-            final String url = "http://localhost:8080/fetch";
+        public String getPostsPlainJSON(final String classic_tracing) {
+            final String url = "http://localhost:8080/fetch?classic_tracing=" + classic_tracing;
             // Tell OpenTelemetry to inject the context in the HTTP headers
             final TextMapSetter<HttpHeaders> setter =
                     (carrier, key, value) -> {
@@ -131,15 +131,16 @@ public class SenderController {
     }
 
     @GetMapping("/poke")
-    public String poke(@RequestParam(value = "where", defaultValue = "") String name) {
+    public String poke(@RequestParam(value = "classic_tracing", defaultValue = "false") String classic_tracing) {
+        logger.debug("classic_tracing=" + classic_tracing);
         Poker s = new Poker();
-        return s.getPostsPlainJSON();
+        return s.getPostsPlainJSON(classic_tracing);
     }
 
     @GetMapping("/parent_span")
-    public String parent_span() {
+    public String parent_span(@RequestParam(value = "classic_tracing", defaultValue = "false") String classic_tracing) {
         PokerSpan s = new PokerSpan();
-        return s.getPostsPlainJSON();
+        return s.getPostsPlainJSON(classic_tracing);
     }
 
     @GetMapping("/fetch")

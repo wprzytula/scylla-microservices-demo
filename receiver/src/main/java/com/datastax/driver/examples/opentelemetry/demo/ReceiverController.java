@@ -5,11 +5,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
-import com.datastax.driver.core.Cluster;
+import com.datastax.driver.core.*;
 
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.Session;
 import com.datastax.driver.core.tracing.NoopTracingInfoFactory;
 import com.datastax.driver.opentelemetry.OpenTelemetryTracingInfoFactory;
 import io.opentelemetry.api.OpenTelemetry;
@@ -85,9 +82,11 @@ public class ReceiverController {
 
     @GetMapping("/fetch")
     public List<String> fetch(@RequestHeader Map<String, String> headers,
-                              @RequestParam(value = "where", defaultValue = "") String name) {
+                              @RequestParam(value = "classic_tracing", defaultValue = "false") String classic_tracing) {
+        final boolean with_classic_tracing = classic_tracing.equals("true");
+
         Context extractedContext = getContextFromHeaders(headers);
-        logger.info("Context type: " + extractedContext.getClass().getName());
+
         if (!extractedContext.toString().equals("{}")) {
             try (Scope scope = extractedContext.makeCurrent()) {
                 // Automatically use the extracted SpanContext as parent.
@@ -103,7 +102,7 @@ public class ReceiverController {
                     // Serve the request
 
                     cluster.setTracingInfoFactory(openTelemetryTracingInfoFactory);
-                    return fetchRequest();
+                    return fetchRequest(with_classic_tracing);
                 } finally {
                     serverSpan.end();
                 }
@@ -111,16 +110,22 @@ public class ReceiverController {
         } else {
             logger.info("Received no context, so proceeding without creating any span.");
             cluster.setTracingInfoFactory(noopTracingInfoFactory);
-            return fetchRequest();
+            return fetchRequest(with_classic_tracing);
         }
     }
 
-    List<String> fetchRequest() {
-        ResultSet result = session.execute("SELECT * FROM simplex.playlists;");
+    List<String> fetchRequest(final boolean with_classic_tracing) {
+        Statement statement = new SimpleStatement("SELECT * FROM simplex.playlists;");
+        if (with_classic_tracing) {
+            statement.enableTracing();
+        }
+        ResultSet result = session.execute(statement);
         List<String> results = new ArrayList<>();
         for (Row row: result) {
             results.add(row.toString());
         }
+        if (with_classic_tracing)
+            results.add("CLASSIC_TRACING_DATA: " + result.getExecutionInfo().toString());
         return results;
     }
 
