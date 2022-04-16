@@ -2,6 +2,8 @@ package com.datastax.driver.examples.opentelemetry.demo;
 
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
+import io.opentelemetry.context.propagation.ContextPropagators;
 import io.opentelemetry.exporter.zipkin.ZipkinSpanExporter;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.resources.Resource;
@@ -28,7 +30,7 @@ import io.opentelemetry.semconv.resource.attributes.ResourceAttributes;
 
 /** Example showing how to configure OpenTelemetry for tracing with Scylla Java Driver. */
 public class OpenTelemetryConfiguration {
-    private static final String SERVICE_NAME = "Scylla Java driver";
+    private static final String SERVICE_NAME = "RECEIVER microservice";
 
     public static OpenTelemetry initialize(SpanExporter spanExporter) {
         Resource serviceNameResource =
@@ -41,18 +43,16 @@ public class OpenTelemetryConfiguration {
                         .setResource(Resource.getDefault().merge(serviceNameResource))
                         .build();
         OpenTelemetrySdk openTelemetry =
-                OpenTelemetrySdk.builder().setTracerProvider(tracerProvider).buildAndRegisterGlobal();
+                OpenTelemetrySdk.builder()
+                        .setTracerProvider(tracerProvider)
+                        .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
+                        .buildAndRegisterGlobal();
 
         // Add a shutdown hook to shut down the SDK.
         Runtime.getRuntime()
                 .addShutdownHook(
                         new Thread(
-                                new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        tracerProvider.close();
-                                    }
-                                }));
+                                tracerProvider::close));
 
         // Return the configured instance so it can be used for instrumentation.
         return openTelemetry;
