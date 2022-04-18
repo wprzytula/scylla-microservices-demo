@@ -1,9 +1,9 @@
 package com.datastax.driver.examples.opentelemetry.demo;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicLong;
 
 import com.datastax.driver.core.*;
 
@@ -11,6 +11,7 @@ import com.datastax.driver.core.tracing.NoopTracingInfoFactory;
 import com.datastax.driver.opentelemetry.OpenTelemetryTracingInfoFactory;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
@@ -18,16 +19,11 @@ import io.opentelemetry.context.propagation.TextMapGetter;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
-public class ReceiverController {
-
-    private static final String template = "Hello, %s!";
-    private final AtomicLong counter = new AtomicLong();
+public class VisitsController {
 
     private final Cluster cluster;
     private final Session session;
@@ -37,9 +33,9 @@ public class ReceiverController {
     private final OpenTelemetryTracingInfoFactory openTelemetryTracingInfoFactory;
     private final NoopTracingInfoFactory noopTracingInfoFactory = new NoopTracingInfoFactory();
 
-    private final Logger logger = LoggerFactory.getLogger(ReceiverController.class);
+    private final Logger logger = LoggerFactory.getLogger(VisitsController.class);
 
-    public ReceiverController() {
+    public VisitsController() {
         cluster = Cluster.builder()
                 .withoutJMXReporting()
                 .withClusterName("ZPP_telemetry")
@@ -53,7 +49,6 @@ public class ReceiverController {
 
         session = cluster.connect();
     }
-
 
     private Context getContextFromHeaders(Map<String, String> headers) {
         TextMapGetter<Map<String, String>> getter =
@@ -77,7 +72,76 @@ public class ReceiverController {
         Context extractedContext = openTelemetry.getPropagators().getTextMapPropagator()
                 .extract(Context.current(), headers, getter);
         logger.info("Extracted context: " + extractedContext.toString());
-        return extractedContext;
+
+        if (!extractedContext.toString().equals("{}"))
+            // if context is nonempty - unfortunately, opentelemetry java library has no native way for checking this
+            return extractedContext;
+        else
+            return null;
+    }
+
+    /* MAPPINGS */
+
+
+    /* EXTERNAL bump_up(ad_id: int) → bumps up related counter by 1 */
+    @PostMapping(value = "/bump_up/{ad_id}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public StatusResponse
+    bumpUp(@RequestHeader Map<String, String> headers,
+           @RequestParam(value = "classicTracing", defaultValue = "false") String classicTracing,
+           @RequestParam(value = "opentelemetryTracing", defaultValue = "false") String opentelemetryTracing,
+           @PathVariable("ad_id") int adId) {
+        final boolean withClassicTracing = classicTracing.equals("true");
+        final boolean withOpentelemetryTracing = opentelemetryTracing.equals("true");
+
+        if (withOpentelemetryTracing) {
+            Span bumpUpSpan = tracer.spanBuilder("bump_up").setSpanKind(SpanKind.SERVER).startSpan();
+            try (Scope scope = bumpUpSpan.makeCurrent()) {
+                logger.debug("Created new span: " + bumpUpSpan.toString());
+                try {
+                    // Add the attributes defined in the Semantic Conventions
+                    // TODO
+                    bumpUpSpan.setAttribute(SemanticAttributes.HTTP_METHOD, "GET");
+                    bumpUpSpan.setAttribute(SemanticAttributes.HTTP_SCHEME, "http");
+                    bumpUpSpan.setAttribute(SemanticAttributes.HTTP_HOST, "localhost:8080");
+                    bumpUpSpan.setAttribute(SemanticAttributes.HTTP_TARGET, "/fetch");
+
+                    // Serve the request
+                    cluster.setTracingInfoFactory(openTelemetryTracingInfoFactory);
+                    return doBumpUp(adId, withClassicTracing);
+                } finally {
+                    bumpUpSpan.end();
+                }
+            }
+        } else {
+            logger.debug("Received no context, so proceeding without creating any OpenTelemetry span.");
+            cluster.setTracingInfoFactory(noopTracingInfoFactory);
+            return doBumpUp(adId, withClassicTracing);
+        }
+
+    }
+
+    /* INTERNAL query_bumps(ad_id: int) → perform SELECT on that ad for Manager */
+    @GetMapping("/query_bumps")
+    public Map<Integer, Integer>
+    query_bumps(@RequestHeader Map<String, String> headers,
+                @RequestParam(value = "classic_tracing", defaultValue = "false") String classic_tracing,
+                @RequestParam(value = "opentelemetry_tracing", defaultValue = "false") String opentelemetry_tracing) {
+        final boolean with_classic_tracing = classic_tracing.equals("true");
+        final boolean with_opentelemetry_tracing = opentelemetry_tracing.equals("true");
+
+        return new HashMap<>();
+    }
+
+    /* INTERNAL init_ad(ad_id: int) → zero-initializes counter for ad_id */
+    @PostMapping(value = "/init_ad", produces = MediaType.APPLICATION_JSON_VALUE)
+    public StatusResponse
+    init_ad(@RequestHeader Map<String, String> headers,
+            @RequestParam(value = "classic_tracing", defaultValue = "false") String classic_tracing,
+            @RequestParam(value = "opentelemetry_tracing", defaultValue = "false") String opentelemetry_tracing) {
+        final boolean with_classic_tracing = classic_tracing.equals("true");
+        final boolean with_opentelemetry_tracing = opentelemetry_tracing.equals("true");
+
+
     }
 
     @GetMapping("/fetch")
@@ -87,7 +151,7 @@ public class ReceiverController {
 
         Context extractedContext = getContextFromHeaders(headers);
 
-        if (!extractedContext.toString().equals("{}")) {
+        if (extractedContext != null) {
             try (Scope scope = extractedContext.makeCurrent()) {
                 // Automatically use the extracted SpanContext as parent.
                 Span serverSpan = tracer.spanBuilder("fetch").setParent(extractedContext).startSpan();
@@ -158,8 +222,7 @@ public class ReceiverController {
                 " 'La Petite Tonkinoise', 'Bye Bye Blackbird', 'Joséphine Baker');");
     }
 
-    @GetMapping("/greeting")
-    public Greeting greeting(@RequestParam(value = "name", defaultValue = "World") String name) {
-        return new Greeting(counter.incrementAndGet(), String.format(template, name));
+    private StatusResponse doBumpUp(int ad_id, final boolean with_classic_tracing) {
+
     }
 }

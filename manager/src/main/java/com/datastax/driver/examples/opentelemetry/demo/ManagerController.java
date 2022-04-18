@@ -2,7 +2,6 @@ package com.datastax.driver.examples.opentelemetry.demo;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
 
 import com.datastax.driver.core.Cluster;
 
@@ -26,10 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 
 @RestController
-public class SenderController {
-
-    private static final String template = "Hello, %s!";
-    private final AtomicLong counter = new AtomicLong();
+public class ManagerController {
 
     private final Cluster cluster;
 
@@ -41,9 +37,9 @@ public class SenderController {
 
     private final Session session;
 
-    private final Logger logger = LoggerFactory.getLogger(SenderController.class);
+    private final Logger logger = LoggerFactory.getLogger(ManagerController.class);
 
-    public SenderController() {
+    public ManagerController() {
         cluster = Cluster.builder()
                 .withoutJMXReporting()
                 .withClusterName("ZPP_telemetry")
@@ -180,15 +176,5 @@ public class SenderController {
         session.execute("INSERT INTO simplex.playlists (id, song_id, title, album, artist) " +
                 "VALUES (2cc9ccb7-6221-4ccb-8387-f22b6a1b354d,756716f7-2e54-4715-9f00-91dcbea6cf50," +
                 " 'La Petite Tonkinoise', 'Bye Bye Blackbird', 'Joséphine Baker');");
-    }
-
-    @GetMapping("/greeting")
-    public Greeting greeting(@RequestParam(value = "name", defaultValue = "World") String name) {
-        return new Greeting(counter.incrementAndGet(), String.format(template, name));
-    }
-
-    @GetMapping("/test_external_trace")
-    public String test_external_trace() {
-        return "";
     }
 }
