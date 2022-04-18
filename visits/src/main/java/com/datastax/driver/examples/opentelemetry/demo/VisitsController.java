@@ -19,7 +19,9 @@ import io.opentelemetry.context.propagation.TextMapGetter;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -71,7 +73,7 @@ public class VisitsController {
         // Extract the SpanContext and other elements from the request.
         Context extractedContext = openTelemetry.getPropagators().getTextMapPropagator()
                 .extract(Context.current(), headers, getter);
-        logger.info("Extracted context: " + extractedContext.toString());
+        logger.debug("Extracted context: " + extractedContext.toString());
 
         if (!extractedContext.toString().equals("{}"))
             // if context is nonempty - unfortunately, opentelemetry java library has no native way for checking this
@@ -80,15 +82,15 @@ public class VisitsController {
             return null;
     }
 
-    /* MAPPINGS */
 
+    /* MAPPINGS */
 
     /* EXTERNAL bump_up(ad_id: int) → bumps up related counter by 1 */
     @PostMapping(value = "/bump_up/{ad_id}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public StatusResponse
+    public ResponseEntity<StatusResponse>
     bumpUp(@RequestHeader Map<String, String> headers,
-           @RequestParam(value = "classicTracing", defaultValue = "false") String classicTracing,
-           @RequestParam(value = "opentelemetryTracing", defaultValue = "false") String opentelemetryTracing,
+           @RequestParam(value = "classic_tracing", defaultValue = "false") String classicTracing,
+           @RequestParam(value = "opentelemetry_tracing", defaultValue = "false") String opentelemetryTracing,
            @PathVariable("ad_id") int adId) {
         final boolean withClassicTracing = classicTracing.equals("true");
         final boolean withOpentelemetryTracing = opentelemetryTracing.equals("true");
@@ -100,10 +102,10 @@ public class VisitsController {
                 try {
                     // Add the attributes defined in the Semantic Conventions
                     // TODO
-                    bumpUpSpan.setAttribute(SemanticAttributes.HTTP_METHOD, "GET");
+                    bumpUpSpan.setAttribute(SemanticAttributes.HTTP_METHOD, "POST");
                     bumpUpSpan.setAttribute(SemanticAttributes.HTTP_SCHEME, "http");
                     bumpUpSpan.setAttribute(SemanticAttributes.HTTP_HOST, "localhost:8080");
-                    bumpUpSpan.setAttribute(SemanticAttributes.HTTP_TARGET, "/fetch");
+                    bumpUpSpan.setAttribute(SemanticAttributes.HTTP_TARGET, "/bump_up/" + adId);
 
                     // Serve the request
                     cluster.setTracingInfoFactory(openTelemetryTracingInfoFactory);
@@ -117,64 +119,77 @@ public class VisitsController {
             cluster.setTracingInfoFactory(noopTracingInfoFactory);
             return doBumpUp(adId, withClassicTracing);
         }
-
     }
 
     /* INTERNAL query_bumps(ad_id: int) → perform SELECT on that ad for Manager */
-    @GetMapping("/query_bumps")
-    public Map<Integer, Integer>
-    query_bumps(@RequestHeader Map<String, String> headers,
-                @RequestParam(value = "classic_tracing", defaultValue = "false") String classic_tracing,
-                @RequestParam(value = "opentelemetry_tracing", defaultValue = "false") String opentelemetry_tracing) {
-        final boolean with_classic_tracing = classic_tracing.equals("true");
-        final boolean with_opentelemetry_tracing = opentelemetry_tracing.equals("true");
-
-        return new HashMap<>();
-    }
-
-    /* INTERNAL init_ad(ad_id: int) → zero-initializes counter for ad_id */
-    @PostMapping(value = "/init_ad", produces = MediaType.APPLICATION_JSON_VALUE)
-    public StatusResponse
-    init_ad(@RequestHeader Map<String, String> headers,
-            @RequestParam(value = "classic_tracing", defaultValue = "false") String classic_tracing,
-            @RequestParam(value = "opentelemetry_tracing", defaultValue = "false") String opentelemetry_tracing) {
-        final boolean with_classic_tracing = classic_tracing.equals("true");
-        final boolean with_opentelemetry_tracing = opentelemetry_tracing.equals("true");
-
-
-    }
-
-    @GetMapping("/fetch")
-    public List<String> fetch(@RequestHeader Map<String, String> headers,
-                              @RequestParam(value = "classic_tracing", defaultValue = "false") String classic_tracing) {
-        final boolean with_classic_tracing = classic_tracing.equals("true");
+    @GetMapping("/query_bumps/{advertiser}")
+    public ResponseEntity<Map<Integer, Integer>>
+    queryBumps(@RequestHeader Map<String, String> headers,
+               @RequestParam(value = "classic_tracing", defaultValue = "false") final String classicTracing,
+               @PathVariable("advertiser") String advertiser) {
+        final boolean withClassicTracing = classicTracing.equals("true");
 
         Context extractedContext = getContextFromHeaders(headers);
 
         if (extractedContext != null) {
             try (Scope scope = extractedContext.makeCurrent()) {
-                // Automatically use the extracted SpanContext as parent.
-                Span serverSpan = tracer.spanBuilder("fetch").setParent(extractedContext).startSpan();
+                Span queryBumpsSpan = tracer.spanBuilder("query_bumps").setParent(extractedContext).startSpan();
 
-                logger.info("Created new span: " + serverSpan.toString());
+                logger.debug("Created new span: " + queryBumpsSpan.toString());
                 try {
                     // Add the attributes defined in the Semantic Conventions
-                    serverSpan.setAttribute(SemanticAttributes.HTTP_METHOD, "GET");
-                    serverSpan.setAttribute(SemanticAttributes.HTTP_SCHEME, "http");
-                    serverSpan.setAttribute(SemanticAttributes.HTTP_HOST, "localhost:8080");
-                    serverSpan.setAttribute(SemanticAttributes.HTTP_TARGET, "/fetch");
+                    queryBumpsSpan.setAttribute(SemanticAttributes.HTTP_METHOD, "GET");
+                    queryBumpsSpan.setAttribute(SemanticAttributes.HTTP_SCHEME, "http");
+                    queryBumpsSpan.setAttribute(SemanticAttributes.HTTP_HOST, "localhost:8080");
+                    queryBumpsSpan.setAttribute(SemanticAttributes.HTTP_TARGET, "/query_bumps/" + advertiser);
                     // Serve the request
 
                     cluster.setTracingInfoFactory(openTelemetryTracingInfoFactory);
-                    return fetchRequest(with_classic_tracing);
+                    return doQueryBumps(advertiser, withClassicTracing);
                 } finally {
-                    serverSpan.end();
+                    queryBumpsSpan.end();
                 }
             }
         } else {
-            logger.info("Received no context, so proceeding without creating any span.");
+            logger.debug("Received no context, so proceeding without creating any span.");
             cluster.setTracingInfoFactory(noopTracingInfoFactory);
-            return fetchRequest(with_classic_tracing);
+            return doQueryBumps(advertiser, withClassicTracing);
+        }
+    }
+
+    /* INTERNAL init_ad(ad_id: int) → zero-initializes counter for ad_id */
+    @PostMapping(value = "/init_ad/{ad_id}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<StatusResponse>
+    init_ad(@RequestHeader Map<String, String> headers,
+            @RequestParam(value = "classic_tracing", defaultValue = "false") String classicTracing,
+            @PathVariable("ad_id") int adId) {
+        final boolean withClassicTracing = classicTracing.equals("true");
+
+        Context extractedContext = getContextFromHeaders(headers);
+
+        if (extractedContext != null) {
+            try (Scope scope = extractedContext.makeCurrent()) {
+                Span queryBumpsSpan = tracer.spanBuilder("init_ad").setParent(extractedContext).startSpan();
+
+                logger.debug("Created new span: " + queryBumpsSpan.toString());
+                try {
+                    // Add the attributes defined in the Semantic Conventions
+                    queryBumpsSpan.setAttribute(SemanticAttributes.HTTP_METHOD, "POST");
+                    queryBumpsSpan.setAttribute(SemanticAttributes.HTTP_SCHEME, "http");
+                    queryBumpsSpan.setAttribute(SemanticAttributes.HTTP_HOST, "localhost:8080");
+                    queryBumpsSpan.setAttribute(SemanticAttributes.HTTP_TARGET, "/ad_id" + adId);
+                    // Serve the request
+
+                    cluster.setTracingInfoFactory(openTelemetryTracingInfoFactory);
+                    return doInitAd(adId, withClassicTracing);
+                } finally {
+                    queryBumpsSpan.end();
+                }
+            }
+        } else {
+            logger.debug("Received no context, so proceeding without creating any span.");
+            cluster.setTracingInfoFactory(noopTracingInfoFactory);
+            return doInitAd(adId, withClassicTracing);
         }
     }
 
@@ -222,7 +237,15 @@ public class VisitsController {
                 " 'La Petite Tonkinoise', 'Bye Bye Blackbird', 'Joséphine Baker');");
     }
 
-    private StatusResponse doBumpUp(int ad_id, final boolean with_classic_tracing) {
+    private ResponseEntity<StatusResponse> doBumpUp(int adId, final boolean withClassicTracing) {
+        return new ResponseEntity<>(new StatusResponse("error", "unimplemented"), HttpStatus.I_AM_A_TEAPOT);
+    }
 
+    private ResponseEntity<Map<Integer, Integer>> doQueryBumps(String advertiser, final boolean withClassicTracing) {
+        return new ResponseEntity<>(new HashMap<>(), HttpStatus.NOT_IMPLEMENTED);
+    }
+
+    private ResponseEntity<StatusResponse> doInitAd(int adId, final boolean withClassicTracing) {
+        return new ResponseEntity<>(new StatusResponse("error", "unimplemented"), HttpStatus.NOT_IMPLEMENTED);
     }
 }
