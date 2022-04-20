@@ -30,7 +30,7 @@ import io.opentelemetry.semconv.resource.attributes.ResourceAttributes;
 
 /** Example showing how to configure OpenTelemetry for tracing with Scylla Java Driver. */
 public class OpenTelemetryConfiguration {
-    private static final String SERVICE_NAME = "SENDER microservice";
+    private static final String SERVICE_NAME = "Manager microservice";
 
     public static OpenTelemetry initialize(SpanExporter spanExporter) {
         Resource serviceNameResource =
