@@ -228,7 +228,7 @@ public class ManagerController {
                     queryBumpsSpan.setAttribute(SemanticAttributes.HTTP_METHOD, "GET");
                     queryBumpsSpan.setAttribute(SemanticAttributes.HTTP_SCHEME, "http");
                     queryBumpsSpan.setAttribute(SemanticAttributes.HTTP_HOST, "localhost:8081");
-                    queryBumpsSpan.setAttribute(SemanticAttributes.HTTP_TARGET, "/queryBumps/" + queryBumpsSpan);
+                    queryBumpsSpan.setAttribute(SemanticAttributes.HTTP_TARGET, "/queryBumps/" + advertiser);
 
                     // Serve the request
                     cluster.setTracingInfoFactory(openTelemetryTracingInfoFactory);
