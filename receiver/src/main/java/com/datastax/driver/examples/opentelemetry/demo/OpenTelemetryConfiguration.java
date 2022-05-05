@@ -11,6 +11,7 @@ import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import io.opentelemetry.sdk.trace.export.SpanExporter;
 import io.opentelemetry.semconv.resource.attributes.ResourceAttributes;
+import zipkin2.reporter.okhttp3.OkHttpSender;
 
 /*
  * Copyright (C) 2021 ScyllaDB
@@ -59,11 +60,18 @@ public class OpenTelemetryConfiguration {
     }
 
     public static OpenTelemetry initializeForZipkin(String ip, int port) {
-        String endpointPath = "/api/v2/spans";
-        String httpUrl = String.format("http://%s:%s", ip, port);
+        final String endpointPath = "/api/v2/spans";
+        final String httpUrl = String.format("http://%s:%s", ip, port);
 
-        SpanExporter exporter =
-                ZipkinSpanExporter.builder().setEndpoint(httpUrl + endpointPath).build();
+        final OkHttpSender sender = OkHttpSender.newBuilder()
+                .maxRequests(32768)
+                .endpoint(httpUrl + endpointPath)
+                .build();
+
+        final SpanExporter exporter = ZipkinSpanExporter
+                .builder()
+                .setSender(sender)
+                .build();
 
         return initialize(exporter);
     }
