@@ -8,7 +8,7 @@ import io.opentelemetry.exporter.zipkin.ZipkinSpanExporter;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.resources.Resource;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
-import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
+import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
 import io.opentelemetry.sdk.trace.export.SpanExporter;
 import io.opentelemetry.semconv.resource.attributes.ResourceAttributes;
 
@@ -39,7 +39,7 @@ public class OpenTelemetryConfiguration {
         // Set to process the spans by the spanExporter.
         final SdkTracerProvider tracerProvider =
                 SdkTracerProvider.builder()
-                        .addSpanProcessor(SimpleSpanProcessor.create(spanExporter))
+                        .addSpanProcessor(BatchSpanProcessor.builder(spanExporter).build())
                         .setResource(Resource.getDefault().merge(serviceNameResource))
                         .build();
         OpenTelemetrySdk openTelemetry =
