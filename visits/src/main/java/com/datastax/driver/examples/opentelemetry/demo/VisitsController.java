@@ -42,7 +42,6 @@ public class VisitsController {
     public VisitsController() {
         cluster = Cluster.builder()
                 .withoutJMXReporting()
-                .withClusterName("ZPP_telemetry")
                 .addContactPoint("127.0.0.1")
                 .build();
 
@@ -50,31 +49,37 @@ public class VisitsController {
 
         tracer = openTelemetry.getTracer("test");
         openTelemetryTracingInfoFactory = new OpenTelemetryTracingInfoFactory(tracer, PrecisionLevel.FULL);
+        cluster.setTracingInfoFactory(openTelemetryTracingInfoFactory);
 
         session = cluster.connect();
 
         /* Init database */
-        assert session != null;
-        session.execute("DROP KEYSPACE IF EXISTS visits;");
-        ResultSet result = session.execute(
-                "CREATE KEYSPACE visits WITH replication = {'class': 'SimpleStrategy', 'replication_factor' : 1};");
-//        assert result : "Database initialization failed";
-        result = session.execute("CREATE TABLE visits.advertisement_rate (rate counter, id int PRIMARY KEY);");
-//        assert result : "Database initialization failed";
+        Span initDatabaseSpan = tracer.spanBuilder("init_database").setSpanKind(SpanKind.SERVER).startSpan();
+        try (Scope scope = initDatabaseSpan.makeCurrent()) {
+            assert session != null;
+            session.execute("DROP KEYSPACE IF EXISTS visits;");
+            ResultSet result = session.execute(
+                    "CREATE KEYSPACE visits WITH replication = {'class': 'SimpleStrategy', 'replication_factor' : 1};");
+            //        assert result : "Database initialization failed";
+            result = session.execute("CREATE TABLE visits.advertisement_rate (rate counter, id int PRIMARY KEY);");
+            //        assert result : "Database initialization failed";
 
-        bumpUpPrepStmt = session.prepare(
-                "UPDATE visits.advertisement_rate SET rate = rate + 1 WHERE id = ?;"
-        );
+            bumpUpPrepStmt = session.prepare(
+                    "UPDATE visits.advertisement_rate SET rate = rate + 1 WHERE id = ?;"
+            );
 
-        bumpUpCheckPrepStmt = session.prepare(
-                "SELECT id FROM visits.advertisement_rate WHERE id = ?;"
-        );
+            bumpUpCheckPrepStmt = session.prepare(
+                    "SELECT id FROM visits.advertisement_rate WHERE id = ?;"
+            );
 
-        queryBumpsStmt = session.prepare("SELECT rate FROM visits.advertisement_rate WHERE id = ?;");
+            queryBumpsStmt = session.prepare("SELECT rate FROM visits.advertisement_rate WHERE id = ?;");
 
-        deleteBumpsStmt = session.prepare("DELETE FROM visits.advertisement_rate WHERE id = ?;");
+            deleteBumpsStmt = session.prepare("DELETE FROM visits.advertisement_rate WHERE id = ?;");
 
-        initBumpsStmt = session.prepare("UPDATE visits.advertisement_rate SET rate = rate + 0 WHERE id = ?;");
+            initBumpsStmt = session.prepare("UPDATE visits.advertisement_rate SET rate = rate + 0 WHERE id = ?;");
+        } finally {
+            initDatabaseSpan.end();
+        }
     }
 
     private Context getContextFromHeaders(Map<String, String> headers) {

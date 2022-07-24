@@ -72,7 +72,6 @@ public class ManagerController {
     public ManagerController() {
         cluster = Cluster.builder()
                 .withoutJMXReporting()
-                .withClusterName("ZPP_telemetry")
                 .addContactPoint("127.0.0.1")
                 .build();
 
@@ -84,37 +83,46 @@ public class ManagerController {
         session = cluster.connect();
 
         /* Init database */
-        assert session != null;
-        session.execute("DROP KEYSPACE IF EXISTS manager;");
-        session.execute("CREATE KEYSPACE manager WITH replication = " +
-                "{'class': 'SimpleStrategy', 'replication_factor' : 1};");
-        session.execute("CREATE TABLE manager.advertiser (name text PRIMARY KEY, budget counter,);");
-        session.execute(
-                "CREATE TABLE manager.advertisement (id int, rate_id int, advertiser text, site text, active_to date," +
-                        " PRIMARY KEY (advertiser, site, id));");
-        session.execute("CREATE TABLE manager.site (name text PRIMARY KEY, pricing int);");
-//        assert result : "Database initialization failed";
+        Span initDatabaseSpan = tracer.spanBuilder("init_database").setSpanKind(SpanKind.SERVER).startSpan();
+        try (Scope scope = initDatabaseSpan.makeCurrent()) {
+            assert session != null;
+            session.execute("DROP KEYSPACE IF EXISTS manager;");
+            session.execute("CREATE KEYSPACE manager WITH replication = " +
+                    "{'class': 'SimpleStrategy', 'replication_factor' : 1};");
+            session.execute("CREATE TABLE manager.advertiser (name text PRIMARY KEY, budget counter,);");
+            session.execute(
+                    "CREATE TABLE manager.advertisement (id int, rate_id int, advertiser text, site text, active_to date," +
+                            " PRIMARY KEY (advertiser, site, id));");
+            session.execute("CREATE TABLE manager.site (name text PRIMARY KEY, pricing int);");
+            //        assert result : "Database initialization failed";
 
-        // Prepare statements
-//        activeToDatePrepStmt = session.prepare("SELECT currentDate() FROM system.local;");
-        createAdPrepStmt = session.prepare(
-                "INSERT INTO manager.advertisement (id, rate_id, advertiser, site, active_to) VALUES (?, ?, ?, ?, ?);");
+            // Prepare statements
+            //        activeToDatePrepStmt = session.prepare("SELECT currentDate() FROM system.local;");
+            createAdPrepStmt = session.prepare(
+                    "INSERT INTO manager.advertisement (id, rate_id, advertiser, site, active_to) VALUES (?, ?, ?, ?, ?);");
 
-        queryPricingPrepStmt = session.prepare("SELECT pricing FROM manager.site WHERE name = ?;");
+            queryPricingPrepStmt = session.prepare("SELECT pricing FROM manager.site WHERE name = ?;");
 
-        decreaseBudgetPrepStmt = session.prepare("UPDATE manager.advertiser SET budget = budget - ? WHERE name = ?;");
+            decreaseBudgetPrepStmt = session.prepare("UPDATE manager.advertiser SET budget = budget - ? WHERE name = ?;");
 
-        queryAdsPrepStmt = session.prepare("SELECT * FROM manager.advertisement WHERE advertiser = ?;");
+            queryAdsPrepStmt = session.prepare("SELECT * FROM manager.advertisement WHERE advertiser = ?;");
 
-        queryRateIdPrepStmt = session.prepare(
-                "SELECT rate_id FROM manager.advertisement WHERE advertiser = ? AND site = ? AND id = ?;");
+            queryRateIdPrepStmt = session.prepare(
+                    "SELECT rate_id FROM manager.advertisement WHERE advertiser = ? AND site = ? AND id = ?;");
 
-        updateRateIdPrepStmt = session.prepare(
-                "UPDATE manager.advertisement SET rate_id = ?" +
-                " WHERE advertiser = ? AND site = ? AND id = ?;");
+            updateRateIdPrepStmt = session.prepare(
+                    "UPDATE manager.advertisement SET rate_id = ?" +
+                            " WHERE advertiser = ? AND site = ? AND id = ?;");
 
-//        Just to play more easily with the microservices example:
-        session.executeAsync("INSERT INTO site (name, pricing) VALUES ('google.com', 100);");
+            // Just to play more easily with the microservices example:
+            session.executeAsync("UPDATE manager.advertiser SET budget = budget + 500 WHERE name = 'ScyllaDB';");
+            session.executeAsync("INSERT INTO manager.site (name, pricing) VALUES ('example.com', 100);");
+            session.executeAsync("INSERT INTO manager.site (name, pricing) VALUES ('cassandrasuc.ks', 20);");
+            session.executeAsync("INSERT INTO manager.site (name, pricing) VALUES ('cassandrasuckssomu.ch', 10);");
+            session.executeAsync("INSERT INTO site (name, pricing) VALUES ('cassandrasuckssomu.ch', 10);");
+        } finally {
+            initDatabaseSpan.end();
+        }
     }
 
     @Service
